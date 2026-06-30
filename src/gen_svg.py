@@ -6,10 +6,10 @@ import os
 import urllib.request
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import closing
 from html import escape
+from http.client import HTTPResponse
 from pathlib import Path
-from typing import Protocol, TypeAlias, cast
+from typing import TypeAlias, cast
 
 TOKEN = os.environ["METRICS_TOKEN"]
 USER = os.environ["GITHUB_ACTOR"]
@@ -23,11 +23,6 @@ JsonValue: TypeAlias = (
 JsonObject: TypeAlias = dict[str, JsonValue]
 
 
-class HttpResponse(Protocol):
-    def read(self) -> bytes: ...
-    def close(self) -> None: ...
-
-
 def gh(url: str, accept: str = "application/vnd.github.v3+json") -> JsonValue:
     req = urllib.request.Request(
         url,
@@ -37,9 +32,7 @@ def gh(url: str, accept: str = "application/vnd.github.v3+json") -> JsonValue:
             "Accept": accept,
         },
     )
-    with closing(
-        cast(HttpResponse, urllib.request.urlopen(req, timeout=TIMEOUT))
-    ) as response:
+    with cast(HTTPResponse, urllib.request.urlopen(req, timeout=TIMEOUT)) as response:
         return cast(JsonValue, json.loads(response.read()))
 
 
@@ -120,9 +113,43 @@ LANG_COLORS = {
     "Kotlin": "#A97BFF",
 }
 
+CARD_CSS = """<style>
+svg {
+  font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif, Apple Color Emoji, Segoe UI Emoji;
+  font-size: 14px;
+  line-height: 21px;
+}
+#background {
+  width: calc(100% - 10px);
+  height: calc(100% - 10px);
+  fill: #00000000;
+  stroke: #8B8B8B22;
+  stroke-width: 1px;
+  rx: 6px;
+  ry: 6px;
+}
+foreignObject {
+  width: calc(100% - 42px);
+}
+.octicon {
+  margin-right: 1ch;
+  vertical-align: top;
+}
+</style>"""
+
 
 def fmt(n: int) -> str:
     return f"{n:,}"
+
+
+def card(body: str, y: int, height: int) -> str:
+    return f"""<svg width="360" height="210" xmlns="http://www.w3.org/2000/svg">
+{CARD_CSS}
+<rect x="5" y="5" id="background" />
+<foreignObject x="21" y="{y}" width="318" height="{height}">
+{body}
+</foreignObject>
+</svg>"""
 
 
 def render_overview(stats: tuple[str, int, int, int, int, int]) -> str:
@@ -141,42 +168,21 @@ def render_overview(stats: tuple[str, int, int, int, int, int]) -> str:
         for key, label, value in items
     )
 
-    return f"""<svg width="360" height="210" xmlns="http://www.w3.org/2000/svg">
-<style>
-svg {{
-  font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif, Apple Color Emoji, Segoe UI Emoji;
-  font-size: 14px;
-  line-height: 21px;
-}}
-#background {{
-  width: calc(100% - 10px);
-  height: calc(100% - 10px);
-  fill: #00000000;
-  stroke: #8B8B8B22;
-  stroke-width: 1px;
-  rx: 6px;
-  ry: 6px;
-}}
-foreignObject {{
-  width: calc(100% - 10px - 32px);
-  height: calc(100% - 10px - 28px);
-}}
+    return card(
+        f"""<style>
+foreignObject {{ height: calc(100% - 38px); }}
 table {{
   width: 100%;
   border-collapse: collapse;
-  table-layout: auto;
 }}
 th {{
-  padding: 0.5em;
-  padding-top: 0;
+  padding: 0 0.5em 0.5em;
   text-align: left;
   font-size: 14px;
   font-weight: 600;
   color: #ffffff;
 }}
 td {{
-  margin-bottom: 16px;
-  margin-top: 8px;
   padding: 0.25em;
   font-size: 12px;
   line-height: 18px;
@@ -190,16 +196,8 @@ td {{
   text-align: right;
   font-weight: 400;
 }}
-.octicon {{
-  fill: rgb(139, 139, 139);
-  margin-right: 1ch;
-  vertical-align: top;
-}}
+.octicon {{ fill: rgb(139, 139, 139); }}
 </style>
-<g>
-<rect x="5" y="5" id="background" />
-<g>
-<foreignObject x="21" y="19" width="318" height="172">
 <div xmlns="http://www.w3.org/1999/xhtml">
 <table>
 <thead><tr>
@@ -208,72 +206,46 @@ td {{
 <tbody>{rows_html}
 </tbody>
 </table>
-</div>
-</foreignObject>
-</g>
-</g>
-</svg>"""
+</div>""",
+        19,
+        172,
+    )
 
 
 def render_languages(languages: dict[str, int]) -> str:
-    total = sum(languages.values())
-    if total == 0:
-        total = 1
-
-    sorted_langs = sorted(languages.items(), key=lambda x: -x[1])
-
+    total = max(1, sum(languages.values()))
     lang_rows = [
         (lang, bytes_ / total * 100, LANG_COLORS.get(lang, "#8b8b8b"))
-        for lang, bytes_ in sorted_langs
+        for lang, bytes_ in sorted(languages.items(), key=lambda x: -x[1])
     ]
     progress_html = "".join(
-        f'<span style="background-color: {color};width: {pct:.3f}%;margin-right: {pct * 0.01:.3f}%;" class="progress-item"></span>'
+        f'<span style="background-color:{color};width:{pct:.3f}%;margin-right:{pct * 0.01:.3f}%"></span>'
         for _, pct, color in lang_rows
     )
     lang_list_html = "".join(
         f"""
 <li>
-<svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:{color};" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
+<svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:{color}" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
 <span class="lang">{escape(lang)}</span>
 <span class="percent">{pct:.2f}%</span>
 </li>"""
         for lang, pct, color in lang_rows[:10]
     )
 
-    return f"""<svg width="360" height="210" xmlns="http://www.w3.org/2000/svg">
-<style>
-svg {{
-  font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif, Apple Color Emoji, Segoe UI Emoji;
-  font-size: 14px;
-  line-height: 21px;
-}}
-#background {{
-  width: calc(100% - 10px);
-  height: calc(100% - 10px);
-  fill: #00000000;
-  stroke: #8B8B8B22;
-  stroke-width: 1px;
-  rx: 6px;
-  ry: 6px;
-}}
-foreignObject {{
-  width: calc(100% - 10px - 32px);
-  height: calc(100% - 10px - 24px);
-}}
+    return card(
+        f"""<style>
+foreignObject {{ height: calc(100% - 34px); }}
 h2 {{
-  margin-top: 0;
-  margin-bottom: 0.75em;
+  margin: 0 0 0.75em;
   line-height: 24px;
   font-size: 16px;
   font-weight: 600;
   color: #ffffff;
-  fill: #ffffff;
 }}
 ul {{
   list-style: none;
   padding-left: 0;
-  margin-top: 0;
-  margin-bottom: 0;
+  margin: 0;
 }}
 li {{
   display: inline-flex;
@@ -286,11 +258,6 @@ div.ellipsis {{
   height: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
-}}
-.octicon {{
-  fill: rgb(248, 96, 105);
-  margin-right: 0.5ch;
-  vertical-align: top;
 }}
 .progress {{
   display: flex;
@@ -306,27 +273,17 @@ div.ellipsis {{
   margin-right: 4px;
   color: rgb(135, 135, 135);
 }}
-.percent {{
-  color: rgb(150,150,150)
-}}
+.percent {{ color: rgb(150,150,150); }}
 </style>
-<g>
-<rect x="5" y="5" id="background" />
-<g>
-<foreignObject x="21" y="17" width="318" height="176">
 <div xmlns="http://www.w3.org/1999/xhtml" class="ellipsis">
 <h2>Most Used Languages</h2>
-<div>
-<span class="progress">{progress_html}
-</span>
-</div>
+<div><span class="progress">{progress_html}</span></div>
 <ul>{lang_list_html}
 </ul>
-</div>
-</foreignObject>
-</g>
-</g>
-</svg>"""
+</div>""",
+        17,
+        176,
+    )
 
 
 def main() -> None:
