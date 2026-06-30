@@ -3,17 +3,27 @@
 
 import json
 import os
-import time
 import urllib.request
 from collections import defaultdict
 from pathlib import Path
+from typing import Protocol, TypeAlias, cast
 
 TOKEN = os.environ["METRICS_TOKEN"]
 USER = os.environ["GITHUB_ACTOR"]
 OUTPUT = Path(os.environ.get("GENERATED_DIR", "."))
 
+JsonValue: TypeAlias = (
+    bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"] | None
+)
+JsonObject: TypeAlias = dict[str, JsonValue]
+JsonList: TypeAlias = list[JsonValue]
 
-def gh(url):
+
+class HttpResponse(Protocol):
+    def read(self) -> bytes: ...
+
+
+def gh(url: str) -> JsonValue:
     req = urllib.request.Request(
         url,
         headers={
@@ -22,10 +32,11 @@ def gh(url):
             "Accept": "application/vnd.github.v3+json",
         },
     )
-    return json.loads(urllib.request.urlopen(req).read())
+    response = cast(HttpResponse, urllib.request.urlopen(req))
+    return cast(JsonValue, json.loads(response.read()))
 
 
-def gh_search(url):
+def gh_search(url: str) -> JsonObject:
     req = urllib.request.Request(
         url,
         headers={
@@ -34,15 +45,19 @@ def gh_search(url):
             "Accept": "application/vnd.github.cloak-preview",
         },
     )
-    return json.loads(urllib.request.urlopen(req).read())
+    response = cast(HttpResponse, urllib.request.urlopen(req))
+    return cast(JsonObject, json.loads(response.read()))
 
 
-def get_all_repos():
-    repos = []
+def get_all_repos() -> list[JsonObject]:
+    repos: list[JsonObject] = []
     page = 1
     while True:
-        batch = gh(
-            f"https://api.github.com/users/{USER}/repos?per_page=100&page={page}&sort=updated"
+        batch = cast(
+            list[JsonObject],
+            gh(
+                f"https://api.github.com/users/{USER}/repos?per_page=100&page={page}&sort=updated"
+            ),
         )
         if not batch:
             break
@@ -51,11 +66,11 @@ def get_all_repos():
     return repos
 
 
-def paginate(url):
-    items = []
+def paginate(url: str) -> JsonList:
+    items: JsonList = []
     page = 1
     while True:
-        data = gh(f"{url}&page={page}")
+        data = cast(JsonList, gh(f"{url}&page={page}"))
         if not data:
             break
         items.extend(data)
@@ -90,11 +105,11 @@ LANG_COLORS = {
 }
 
 
-def fmt(n):
+def fmt(n: int) -> str:
     return f"{n:,}"
 
 
-def render_overview(stats):
+def render_overview(stats: tuple[str, int, int, int, int, int]) -> str:
     name, commits, prs, issues, lines, repos = stats
 
     rows_html = ""
@@ -194,7 +209,7 @@ tr {{
 </svg>"""
 
 
-def render_languages(languages):
+def render_languages(languages: dict[str, int]) -> str:
     total = sum(languages.values())
     if total == 0:
         total = 1
@@ -313,31 +328,31 @@ div.ellipsis {{
 </svg>"""
 
 
-def main():
+def main() -> None:
     print("Fetching user info...")
-    user = gh(f"https://api.github.com/users/{USER}")
-    name = user.get("name") or USER
+    user = cast(JsonObject, gh(f"https://api.github.com/users/{USER}"))
+    name = cast(str | None, user.get("name")) or USER
     print(f"  Name: {name}")
 
     print("Fetching commit count...")
     commits_data = gh_search(
         f"https://api.github.com/search/commits?q=author:{USER}"
     )
-    total_commits = commits_data["total_count"]
+    total_commits = cast(int, commits_data["total_count"])
     print(f"  Commits: {total_commits}")
 
     print("Fetching PR count...")
     prs_data = gh_search(
         f"https://api.github.com/search/issues?q=author:{USER}+type:pr"
     )
-    total_prs = prs_data["total_count"]
+    total_prs = cast(int, prs_data["total_count"])
     print(f"  PRs: {total_prs}")
 
     print("Fetching issue count...")
     issues_data = gh_search(
         f"https://api.github.com/search/issues?q=author:{USER}+type:issue"
     )
-    total_issues = issues_data["total_count"]
+    total_issues = cast(int, issues_data["total_count"])
     print(f"  Issues: {total_issues}")
 
     print("Fetching repos...")
@@ -345,12 +360,12 @@ def main():
     print(f"  Repos: {len(repos)}")
 
     print("Fetching languages...")
-    languages = defaultdict(int)
+    languages: defaultdict[str, int] = defaultdict(int)
     for repo in repos:
         try:
-            lang_data = gh(repo["languages_url"])
+            lang_data = cast(JsonObject, gh(cast(str, repo["languages_url"])))
             for lang, bytes_ in lang_data.items():
-                languages[lang] += bytes_
+                languages[lang] += cast(int, bytes_)
         except Exception:
             pass
 
@@ -359,8 +374,9 @@ def main():
     total_deleted = 0
     for repo in repos:
         try:
-            freq = gh(repo["url"] + "/stats/code_frequency")
-            if isinstance(freq, list):
+            freq_data = gh(cast(str, repo["url"]) + "/stats/code_frequency")
+            if isinstance(freq_data, list):
+                freq = cast(list[list[int]], freq_data)
                 for week in freq:
                     if week[1] > 0:
                         total_added += week[1]
@@ -379,13 +395,13 @@ def main():
         (name, total_commits, total_prs, total_issues, lines_changed, len(repos))
     )
     overview_path = OUTPUT / "generated.overview.svg"
-    overview_path.write_text(svg, encoding="utf-8")
+    _ = overview_path.write_text(svg, encoding="utf-8")
     print(f"  Written to {overview_path}")
 
     print("Generating languages SVG...")
     svg_langs = render_languages(dict(languages))
     langs_path = OUTPUT / "generated.languages.svg"
-    langs_path.write_text(svg_langs, encoding="utf-8")
+    _ = langs_path.write_text(svg_langs, encoding="utf-8")
     print(f"  Written to {langs_path}")
 
     print("Done!")
