@@ -137,7 +137,7 @@ def render_overview(stats: tuple[str, int, int, int, int, int]) -> str:
     ]
     rows_html = "".join(
         f"""
-<tr style="animation-delay: {i * 40}ms"><td class="label">{OCTICONS[key]}{label}</td><td class="value">{value}</td></tr>"""
+<tr style="animation-delay: {i * 35}ms"><td class="label">{OCTICONS[key]}{label}</td><td class="value">{value}</td></tr>"""
         for i, (key, label, value) in enumerate(items)
     )
 
@@ -183,10 +183,11 @@ td {{
   color: rgb(145, 145, 145);
 }}
 tr {{
-  transform: translateY(100%);
-  animation-duration: 180ms;
+  opacity: 0;
+  transform: translateY(8px);
+  animation-duration: 260ms;
   animation-name: slideIn;
-  animation-timing-function: ease-out;
+  animation-timing-function: cubic-bezier(.16, 1, .3, 1);
   animation-fill-mode: forwards;
 }}
 .label {{
@@ -203,7 +204,7 @@ tr {{
   vertical-align: top;
 }}
 @keyframes slideIn {{
-  to {{ transform: translateY(0); }}
+  to {{ opacity: 1; transform: translateY(0); }}
 }}
 </style>
 <g>
@@ -242,7 +243,7 @@ def render_languages(languages: dict[str, int]) -> str:
     )
     lang_list_html = "".join(
         f"""
-<li style="animation-delay: {i * 40}ms;">
+<li style="animation-delay: {i * 35}ms;">
 <svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:{color};" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
 <span class="lang">{escape(lang)}</span>
 <span class="percent">{pct:.2f}%</span>
@@ -291,14 +292,15 @@ li {{
   margin-right: 2ch;
   align-items: center;
   flex-wrap: nowrap;
-  transform: translateX(-100%);
-  animation-duration: 180ms;
+  opacity: 0;
+  transform: translateX(-8px);
+  animation-duration: 260ms;
   animation-name: slideIn;
-  animation-timing-function: ease-out;
+  animation-timing-function: cubic-bezier(.16, 1, .3, 1);
   animation-fill-mode: forwards;
 }}
 @keyframes slideIn {{
-  to {{ transform: translateX(0); }}
+  to {{ opacity: 1; transform: translateX(0); }}
 }}
 div.ellipsis {{
   height: 100%;
