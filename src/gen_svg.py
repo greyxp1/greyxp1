@@ -347,18 +347,12 @@ def main():
     print("Fetching languages...")
     languages = defaultdict(int)
     for repo in repos:
-        name = repo["name"]
-        url = repo["languages_url"]
-        print(f"  Fetching languages for {name}...")
         try:
-            lang_data = gh(url)
+            lang_data = gh(repo["languages_url"])
             for lang, bytes_ in lang_data.items():
                 languages[lang] += bytes_
-            print(f"    -> {len(lang_data)} languages")
-        except Exception as e:
-            print(f"    -> FAILED: {e}")
-            print(f"    -> URL: {url}")
-            print(f"    -> Full repo: {json.dumps({k: repo[k] for k in ('name', 'full_name', 'private', 'fork', 'owner', 'archived', 'disabled')}, default=str)}")
+        except Exception:
+            pass
 
     print("Computing lines changed...")
     total_added = 0
