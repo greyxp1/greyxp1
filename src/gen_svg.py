@@ -184,7 +184,7 @@ td {{
 }}
 tr {{
   transform: translateY(500%);
-  animation-duration: 1s;
+  animation-duration: 400ms;
   animation-name: slideIn;
   animation-function: ease-in-out;
   animation-fill-mode: forwards;
@@ -292,7 +292,7 @@ li {{
   align-items: center;
   flex-wrap: nowrap;
   transform: translateX(-500%);
-  animation-duration: 1s;
+  animation-duration: 400ms;
   animation-name: slideIn;
   animation-function: ease-in-out;
   animation-fill-mode: forwards;
