@@ -3,6 +3,7 @@
 
 import json
 import os
+import time
 import urllib.request
 from collections import defaultdict
 from pathlib import Path
@@ -90,11 +91,7 @@ LANG_COLORS = {
 
 
 def fmt(n):
-    if n >= 1_000_000:
-        return f"{n / 1_000_000:.1f}M"
-    if n >= 1_000:
-        return f"{n / 1_000:.1f}k"
-    return str(n)
+    return f"{n:,}"
 
 
 def render_overview(stats):
@@ -360,12 +357,28 @@ def main():
     for repo in repos:
         try:
             freq = gh(repo["url"] + "/stats/code_frequency")
-            if isinstance(freq, list):
+            if isinstance(freq, list) and freq:
                 for week in freq:
                     if week[1] > 0:
                         total_added += week[1]
                     if week[2] < 0:
                         total_deleted += abs(week[2])
+            else:
+                contribs = gh(repo["url"] + "/stats/contributors")
+                if isinstance(contribs, list) and contribs:
+                    for c in contribs:
+                        for w in c.get("weeks", []):
+                            total_added += w.get("a", 0)
+                            total_deleted += w.get("d", 0)
+                elif isinstance(freq, dict) and "retry_after" in freq:
+                    time.sleep(int(freq["retry_after"]))
+                    freq2 = gh(repo["url"] + "/stats/code_frequency")
+                    if isinstance(freq2, list):
+                        for week in freq2:
+                            if week[1] > 0:
+                                total_added += week[1]
+                            if week[2] < 0:
+                                total_deleted += abs(week[2])
         except Exception as e:
             print(f"  Warning: could not fetch code frequency for {repo['name']}: {e}")
 
