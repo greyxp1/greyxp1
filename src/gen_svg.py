@@ -4,49 +4,49 @@
 import json
 import os
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
+from contextlib import closing
+from html import escape
 from pathlib import Path
 from typing import Protocol, TypeAlias, cast
 
 TOKEN = os.environ["METRICS_TOKEN"]
 USER = os.environ["GITHUB_ACTOR"]
 OUTPUT = Path(os.environ.get("GENERATED_DIR", "."))
+TIMEOUT = 30
+MAX_WORKERS = 8
 
 JsonValue: TypeAlias = (
     bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"] | None
 )
 JsonObject: TypeAlias = dict[str, JsonValue]
-JsonList: TypeAlias = list[JsonValue]
 
 
 class HttpResponse(Protocol):
     def read(self) -> bytes: ...
+    def close(self) -> None: ...
 
 
-def gh(url: str) -> JsonValue:
+def gh(url: str, accept: str = "application/vnd.github.v3+json") -> JsonValue:
     req = urllib.request.Request(
         url,
         headers={
             "Authorization": f"token {TOKEN}",
             "User-Agent": "profile-stats",
-            "Accept": "application/vnd.github.v3+json",
+            "Accept": accept,
         },
     )
-    response = cast(HttpResponse, urllib.request.urlopen(req))
-    return cast(JsonValue, json.loads(response.read()))
+    with closing(
+        cast(HttpResponse, urllib.request.urlopen(req, timeout=TIMEOUT))
+    ) as response:
+        return cast(JsonValue, json.loads(response.read()))
 
 
 def gh_search(url: str) -> JsonObject:
-    req = urllib.request.Request(
-        url,
-        headers={
-            "Authorization": f"token {TOKEN}",
-            "User-Agent": "profile-stats",
-            "Accept": "application/vnd.github.cloak-preview",
-        },
+    return cast(
+        JsonObject, gh(url, accept="application/vnd.github.cloak-preview")
     )
-    response = cast(HttpResponse, urllib.request.urlopen(req))
-    return cast(JsonObject, json.loads(response.read()))
 
 
 def get_all_repos() -> list[JsonObject]:
@@ -66,16 +66,32 @@ def get_all_repos() -> list[JsonObject]:
     return repos
 
 
-def paginate(url: str) -> JsonList:
-    items: JsonList = []
-    page = 1
-    while True:
-        data = cast(JsonList, gh(f"{url}&page={page}"))
-        if not data:
-            break
-        items.extend(data)
-        page += 1
-    return items
+def repo_str(repo: JsonObject, key: str) -> str:
+    return cast(str, repo[key])
+
+
+def get_repo_languages(repo: JsonObject) -> dict[str, int]:
+    try:
+        data = cast(JsonObject, gh(repo_str(repo, "languages_url")))
+        return {lang: cast(int, bytes_) for lang, bytes_ in data.items()}
+    except Exception as e:
+        print(f"  Warning: could not fetch languages for {repo_str(repo, 'name')}: {e}")
+        return {}
+
+
+def get_repo_line_delta(repo: JsonObject) -> tuple[int, int]:
+    try:
+        data = gh(repo_str(repo, "url") + "/stats/code_frequency")
+        if not isinstance(data, list):
+            return (0, 0)
+        weeks = cast(list[list[int]], data)
+        return (
+            sum(week[1] for week in weeks if week[1] > 0),
+            sum(abs(week[2]) for week in weeks if week[2] < 0),
+        )
+    except Exception as e:
+        print(f"  Warning: could not fetch code frequency for {repo_str(repo, 'name')}: {e}")
+        return (0, 0)
 
 
 OCTICONS = {
@@ -112,7 +128,6 @@ def fmt(n: int) -> str:
 def render_overview(stats: tuple[str, int, int, int, int, int]) -> str:
     name, commits, prs, issues, lines, repos = stats
 
-    rows_html = ""
     items = [
         ("commits", "Commits", fmt(commits)),
         ("lines", "Lines of code changed", fmt(lines)),
@@ -120,10 +135,11 @@ def render_overview(stats: tuple[str, int, int, int, int, int]) -> str:
         ("issues", "Issues opened", fmt(issues)),
         ("repos", "Repositories contributed", fmt(repos)),
     ]
-    for i, (key, label, value) in enumerate(items):
-        delay = i * 150
-        rows_html += f"""
-<tr style="animation-delay: {delay}ms"><td class="label">{OCTICONS[key]}{label}</td><td class="value">{value}</td></tr>"""
+    rows_html = "".join(
+        f"""
+<tr style="animation-delay: {i * 150}ms"><td class="label">{OCTICONS[key]}{label}</td><td class="value">{value}</td></tr>"""
+        for i, (key, label, value) in enumerate(items)
+    )
 
     return f"""<svg width="360" height="210" xmlns="http://www.w3.org/2000/svg">
 <style>
@@ -197,7 +213,7 @@ tr {{
 <div xmlns="http://www.w3.org/1999/xhtml">
 <table>
 <thead><tr style="transform: translateX(0);">
-<th colspan="2">{name}&#x2019;s GitHub Statistics</th>
+<th colspan="2">{escape(name)}&#x2019;s GitHub Statistics</th>
 </tr></thead>
 <tbody>{rows_html}
 </tbody>
@@ -216,20 +232,23 @@ def render_languages(languages: dict[str, int]) -> str:
 
     sorted_langs = sorted(languages.items(), key=lambda x: -x[1])
 
-    progress_html = ""
-    lang_list_html = ""
-    for i, (lang, bytes_) in enumerate(sorted_langs):
-        pct = bytes_ / total * 100
-        color = LANG_COLORS.get(lang, "#8b8b8b")
-        progress_html += f'<span style="background-color: {color};width: {pct:.3f}%;margin-right: {pct * 0.01:.3f}%;" class="progress-item"></span>'
-        if i < 10:
-            delay = i * 150
-            lang_list_html += f"""
-<li style="animation-delay: {delay}ms;">
+    lang_rows = [
+        (lang, bytes_ / total * 100, LANG_COLORS.get(lang, "#8b8b8b"))
+        for lang, bytes_ in sorted_langs
+    ]
+    progress_html = "".join(
+        f'<span style="background-color: {color};width: {pct:.3f}%;margin-right: {pct * 0.01:.3f}%;" class="progress-item"></span>'
+        for _, pct, color in lang_rows
+    )
+    lang_list_html = "".join(
+        f"""
+<li style="animation-delay: {i * 150}ms;">
 <svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:{color};" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
-<span class="lang">{lang}</span>
+<span class="lang">{escape(lang)}</span>
 <span class="percent">{pct:.2f}%</span>
 </li>"""
+        for i, (lang, pct, color) in enumerate(lang_rows[:10])
+    )
 
     return f"""<svg width="360" height="210" xmlns="http://www.w3.org/2000/svg">
 <style>
@@ -361,29 +380,18 @@ def main() -> None:
 
     print("Fetching languages...")
     languages: defaultdict[str, int] = defaultdict(int)
-    for repo in repos:
-        try:
-            lang_data = cast(JsonObject, gh(cast(str, repo["languages_url"])))
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        for lang_data in executor.map(get_repo_languages, repos):
             for lang, bytes_ in lang_data.items():
-                languages[lang] += cast(int, bytes_)
-        except Exception:
-            pass
+                languages[lang] += bytes_
 
     print("Computing lines changed...")
     total_added = 0
     total_deleted = 0
-    for repo in repos:
-        try:
-            freq_data = gh(cast(str, repo["url"]) + "/stats/code_frequency")
-            if isinstance(freq_data, list):
-                freq = cast(list[list[int]], freq_data)
-                for week in freq:
-                    if week[1] > 0:
-                        total_added += week[1]
-                    if week[2] < 0:
-                        total_deleted += abs(week[2])
-        except Exception as e:
-            print(f"  Warning: could not fetch code frequency for {repo['name']}: {e}")
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        for added, deleted in executor.map(get_repo_line_delta, repos):
+            total_added += added
+            total_deleted += deleted
 
     lines_changed = total_added + total_deleted
     print(f"  Lines added: {total_added:,}")
