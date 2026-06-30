@@ -4,8 +4,8 @@
 import json
 import os
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from html import escape
 from pathlib import Path
@@ -44,9 +44,7 @@ def gh(url: str, accept: str = "application/vnd.github.v3+json") -> JsonValue:
 
 
 def gh_search(url: str) -> JsonObject:
-    return cast(
-        JsonObject, gh(url, accept="application/vnd.github.cloak-preview")
-    )
+    return cast(JsonObject, gh(url, accept="application/vnd.github.cloak-preview"))
 
 
 def get_all_repos() -> list[JsonObject]:
@@ -90,7 +88,9 @@ def get_repo_line_delta(repo: JsonObject) -> tuple[int, int]:
             sum(abs(week[2]) for week in weeks if week[2] < 0),
         )
     except Exception as e:
-        print(f"  Warning: could not fetch code frequency for {repo_str(repo, 'name')}: {e}")
+        print(
+            f"  Warning: could not fetch code frequency for {repo_str(repo, 'name')}: {e}"
+        )
         return (0, 0)
 
 
@@ -137,7 +137,7 @@ def render_overview(stats: tuple[str, int, int, int, int, int]) -> str:
     ]
     rows_html = "".join(
         f"""
-<tr style="animation-delay: {i * 150}ms"><td class="label">{OCTICONS[key]}{label}</td><td class="value">{value}</td></tr>"""
+<tr style="animation-delay: {i * 40}ms"><td class="label">{OCTICONS[key]}{label}</td><td class="value">{value}</td></tr>"""
         for i, (key, label, value) in enumerate(items)
     )
 
@@ -183,10 +183,10 @@ td {{
   color: rgb(145, 145, 145);
 }}
 tr {{
-  transform: translateY(500%);
-  animation-duration: 400ms;
+  transform: translateY(100%);
+  animation-duration: 180ms;
   animation-name: slideIn;
-  animation-function: ease-in-out;
+  animation-timing-function: ease-out;
   animation-fill-mode: forwards;
 }}
 .label {{
@@ -242,7 +242,7 @@ def render_languages(languages: dict[str, int]) -> str:
     )
     lang_list_html = "".join(
         f"""
-<li style="animation-delay: {i * 150}ms;">
+<li style="animation-delay: {i * 40}ms;">
 <svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:{color};" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
 <span class="lang">{escape(lang)}</span>
 <span class="percent">{pct:.2f}%</span>
@@ -291,10 +291,10 @@ li {{
   margin-right: 2ch;
   align-items: center;
   flex-wrap: nowrap;
-  transform: translateX(-500%);
-  animation-duration: 400ms;
+  transform: translateX(-100%);
+  animation-duration: 180ms;
   animation-name: slideIn;
-  animation-function: ease-in-out;
+  animation-timing-function: ease-out;
   animation-fill-mode: forwards;
 }}
 @keyframes slideIn {{
@@ -354,9 +354,7 @@ def main() -> None:
     print(f"  Name: {name}")
 
     print("Fetching commit count...")
-    commits_data = gh_search(
-        f"https://api.github.com/search/commits?q=author:{USER}"
-    )
+    commits_data = gh_search(f"https://api.github.com/search/commits?q=author:{USER}")
     total_commits = cast(int, commits_data["total_count"])
     print(f"  Commits: {total_commits}")
 
