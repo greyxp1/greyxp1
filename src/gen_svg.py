@@ -137,8 +137,8 @@ def render_overview(stats: tuple[str, int, int, int, int, int]) -> str:
     ]
     rows_html = "".join(
         f"""
-<tr style="animation-delay: {i * 35}ms"><td class="label">{OCTICONS[key]}{label}</td><td class="value">{value}</td></tr>"""
-        for i, (key, label, value) in enumerate(items)
+<tr><td class="label">{OCTICONS[key]}{label}</td><td class="value">{value}</td></tr>"""
+        for key, label, value in items
     )
 
     return f"""<svg width="360" height="210" xmlns="http://www.w3.org/2000/svg">
@@ -182,14 +182,6 @@ td {{
   line-height: 18px;
   color: rgb(145, 145, 145);
 }}
-tr {{
-  opacity: 0;
-  transform: translateY(8px);
-  animation-duration: 260ms;
-  animation-name: slideIn;
-  animation-timing-function: cubic-bezier(.16, 1, .3, 1);
-  animation-fill-mode: forwards;
-}}
 .label {{
   font-weight: 600;
   color: rgb(139, 139, 139);
@@ -203,9 +195,6 @@ tr {{
   margin-right: 1ch;
   vertical-align: top;
 }}
-@keyframes slideIn {{
-  to {{ opacity: 1; transform: translateY(0); }}
-}}
 </style>
 <g>
 <rect x="5" y="5" id="background" />
@@ -213,7 +202,7 @@ tr {{
 <foreignObject x="21" y="19" width="318" height="172">
 <div xmlns="http://www.w3.org/1999/xhtml">
 <table>
-<thead><tr style="transform: translateX(0);">
+<thead><tr>
 <th colspan="2">{escape(name)}&#x2019;s GitHub Statistics</th>
 </tr></thead>
 <tbody>{rows_html}
@@ -243,12 +232,12 @@ def render_languages(languages: dict[str, int]) -> str:
     )
     lang_list_html = "".join(
         f"""
-<li style="animation-delay: {i * 35}ms;">
+<li>
 <svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:{color};" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
 <span class="lang">{escape(lang)}</span>
 <span class="percent">{pct:.2f}%</span>
 </li>"""
-        for i, (lang, pct, color) in enumerate(lang_rows[:10])
+        for lang, pct, color in lang_rows[:10]
     )
 
     return f"""<svg width="360" height="210" xmlns="http://www.w3.org/2000/svg">
@@ -292,15 +281,6 @@ li {{
   margin-right: 2ch;
   align-items: center;
   flex-wrap: nowrap;
-  opacity: 0;
-  transform: translateX(-8px);
-  animation-duration: 260ms;
-  animation-name: slideIn;
-  animation-timing-function: cubic-bezier(.16, 1, .3, 1);
-  animation-fill-mode: forwards;
-}}
-@keyframes slideIn {{
-  to {{ opacity: 1; transform: translateX(0); }}
 }}
 div.ellipsis {{
   height: 100%;
