@@ -100,9 +100,9 @@ def render_overview(stats):
     rows_html = ""
     items = [
         ("commits", "Commits", fmt(commits)),
+        ("lines", "Lines of code changed", fmt(lines)),
         ("prs", "Pull requests", fmt(prs)),
         ("issues", "Issues opened", fmt(issues)),
-        ("lines", "Lines changed", fmt(lines)),
         ("repos", "Repositories contributed", fmt(repos)),
     ]
     for i, (key, label, value) in enumerate(items):
@@ -357,28 +357,12 @@ def main():
     for repo in repos:
         try:
             freq = gh(repo["url"] + "/stats/code_frequency")
-            if isinstance(freq, list) and freq:
+            if isinstance(freq, list):
                 for week in freq:
                     if week[1] > 0:
                         total_added += week[1]
                     if week[2] < 0:
                         total_deleted += abs(week[2])
-            else:
-                contribs = gh(repo["url"] + "/stats/contributors")
-                if isinstance(contribs, list) and contribs:
-                    for c in contribs:
-                        for w in c.get("weeks", []):
-                            total_added += w.get("a", 0)
-                            total_deleted += w.get("d", 0)
-                elif isinstance(freq, dict) and "retry_after" in freq:
-                    time.sleep(int(freq["retry_after"]))
-                    freq2 = gh(repo["url"] + "/stats/code_frequency")
-                    if isinstance(freq2, list):
-                        for week in freq2:
-                            if week[1] > 0:
-                                total_added += week[1]
-                            if week[2] < 0:
-                                total_deleted += abs(week[2])
         except Exception as e:
             print(f"  Warning: could not fetch code frequency for {repo['name']}: {e}")
 
