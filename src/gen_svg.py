@@ -3,6 +3,7 @@
 
 import json
 import os
+import time
 import urllib.request
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -71,20 +72,37 @@ def get_repo_languages(repo: JsonObject) -> dict[str, int]:
 
 
 def get_repo_line_delta(repo: JsonObject) -> tuple[int, int]:
-    try:
-        data = gh(repo_str(repo, "url") + "/stats/code_frequency")
-        if not isinstance(data, list):
+    retries = 5
+    for attempt in range(retries):
+        try:
+            data = gh(repo_str(repo, "url") + "/stats/code_frequency")
+            if not isinstance(data, list):
+                if attempt + 1 < retries:
+                    wait = 2 ** attempt
+                    print(
+                        f"  Retrying {repo_str(repo, 'name')} in {wait}s (attempt {attempt + 1})..."
+                    )
+                    time.sleep(wait)
+                    continue
+                return (0, 0)
+            weeks = cast(list[list[int]], data)
+            return (
+                sum(week[1] for week in weeks if week[1] > 0),
+                sum(abs(week[2]) for week in weeks if week[2] < 0),
+            )
+        except Exception as e:
+            if attempt + 1 < retries:
+                wait = 2 ** attempt
+                print(
+                    f"  Retrying {repo_str(repo, 'name')} in {wait}s (attempt {attempt + 1}): {e}"
+                )
+                time.sleep(wait)
+                continue
+            print(
+                f"  Warning: could not fetch code frequency for {repo_str(repo, 'name')}: {e}"
+            )
             return (0, 0)
-        weeks = cast(list[list[int]], data)
-        return (
-            sum(week[1] for week in weeks if week[1] > 0),
-            sum(abs(week[2]) for week in weeks if week[2] < 0),
-        )
-    except Exception as e:
-        print(
-            f"  Warning: could not fetch code frequency for {repo_str(repo, 'name')}: {e}"
-        )
-        return (0, 0)
+    return (0, 0)
 
 
 OCTICONS = {
