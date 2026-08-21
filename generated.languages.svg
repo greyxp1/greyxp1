@@ -68,22 +68,22 @@ div.ellipsis {
 </style>
 <div xmlns="http://www.w3.org/1999/xhtml" class="ellipsis">
 <h2>Most Used Languages</h2>
-<div><span class="progress"><span style="background-color:#dea584;width:82.863%;margin-right:0.829%"></span><span style="background-color:#8b8b8b;width:5.857%;margin-right:0.059%"></span><span style="background-color:#7e7eff;width:3.916%;margin-right:0.039%"></span><span style="background-color:#3572A5;width:2.185%;margin-right:0.022%"></span><span style="background-color:#00ADD8;width:0.737%;margin-right:0.007%"></span><span style="background-color:#555555;width:0.706%;margin-right:0.007%"></span><span style="background-color:#89e051;width:0.686%;margin-right:0.007%"></span><span style="background-color:#8b8b8b;width:0.665%;margin-right:0.007%"></span><span style="background-color:#663399;width:0.611%;margin-right:0.006%"></span><span style="background-color:#f1e05a;width:0.587%;margin-right:0.006%"></span><span style="background-color:#000080;width:0.544%;margin-right:0.005%"></span><span style="background-color:#3178c6;width:0.480%;margin-right:0.005%"></span><span style="background-color:#e34c26;width:0.095%;margin-right:0.001%"></span><span style="background-color:#8b8b8b;width:0.068%;margin-right:0.001%"></span></span></div>
+<div><span class="progress"><span style="background-color:#dea584;width:82.917%;margin-right:0.829%"></span><span style="background-color:#8b8b8b;width:5.853%;margin-right:0.059%"></span><span style="background-color:#7e7eff;width:3.913%;margin-right:0.039%"></span><span style="background-color:#3572A5;width:2.183%;margin-right:0.022%"></span><span style="background-color:#00ADD8;width:0.736%;margin-right:0.007%"></span><span style="background-color:#555555;width:0.706%;margin-right:0.007%"></span><span style="background-color:#89e051;width:0.685%;margin-right:0.007%"></span><span style="background-color:#8b8b8b;width:0.665%;margin-right:0.007%"></span><span style="background-color:#663399;width:0.610%;margin-right:0.006%"></span><span style="background-color:#f1e05a;width:0.587%;margin-right:0.006%"></span><span style="background-color:#000080;width:0.544%;margin-right:0.005%"></span><span style="background-color:#3178c6;width:0.480%;margin-right:0.005%"></span><span style="background-color:#e34c26;width:0.095%;margin-right:0.001%"></span><span style="background-color:#8b8b8b;width:0.026%;margin-right:0.000%"></span></span></div>
 <ul>
 <li>
 <svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:#dea584" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
 <span class="lang">Rust</span>
-<span class="percent">82.86%</span>
+<span class="percent">82.92%</span>
 </li>
 <li>
 <svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:#8b8b8b" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
 <span class="lang">Luau</span>
-<span class="percent">5.86%</span>
+<span class="percent">5.85%</span>
 </li>
 <li>
 <svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:#7e7eff" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
 <span class="lang">Nix</span>
-<span class="percent">3.92%</span>
+<span class="percent">3.91%</span>
 </li>
 <li>
 <svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:#3572A5" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
@@ -108,7 +108,7 @@ div.ellipsis {
 <li>
 <svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:#8b8b8b" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
 <span class="lang">GLSL</span>
-<span class="percent">0.67%</span>
+<span class="percent">0.66%</span>
 </li>
 <li>
 <svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:#663399" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
