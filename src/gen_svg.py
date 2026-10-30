@@ -1,12 +1,14 @@
-#!/usr/bin/env python3
 """Generate clean SVG stats cards for GitHub profile README."""
 
 import json
 import os
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from html import escape
 from http.client import HTTPResponse
 from pathlib import Path
@@ -24,21 +26,211 @@ JsonValue: TypeAlias = (
 JsonObject: TypeAlias = dict[str, JsonValue]
 
 
-def gh(url: str, accept: str = "application/vnd.github.v3+json") -> JsonValue:
+class SearchChangedError(RuntimeError):
+    """GitHub's search index changed while collecting commits."""
+
+
+def gh(url: str, data: JsonObject | None = None) -> JsonValue:
     req = urllib.request.Request(
         url,
+        data=json.dumps(data).encode() if data is not None else None,
         headers={
             "Authorization": f"token {TOKEN}",
             "User-Agent": "profile-stats",
-            "Accept": accept,
+            "Accept": "application/vnd.github+json",
+            "Content-Type": "application/json",
         },
     )
-    with cast(HTTPResponse, urllib.request.urlopen(req, timeout=TIMEOUT)) as response:
-        return cast(JsonValue, json.loads(response.read()))
+    for attempt in range(3):
+        try:
+            with cast(
+                HTTPResponse, urllib.request.urlopen(req, timeout=TIMEOUT)
+            ) as response:
+                result = cast(JsonValue, json.loads(response.read()))
+            break
+        except urllib.error.HTTPError as error:
+            message = error.read().decode("utf-8", errors="replace")
+            retry_after = error.headers.get("Retry-After")
+            primary_limit = error.headers.get("X-RateLimit-Remaining") == "0"
+            secondary_limit = "secondary rate limit" in message.lower()
+            if (
+                attempt == 2
+                or error.code not in (403, 429)
+                or not (
+                    retry_after or primary_limit or secondary_limit or error.code == 429
+                )
+            ):
+                raise RuntimeError(
+                    f"GitHub API error {error.code}: {message}"
+                ) from error
+            if retry_after:
+                wait = max(1, float(retry_after))
+            elif primary_limit:
+                wait = max(1, int(error.headers["X-RateLimit-Reset"]) - time.time() + 1)
+            else:
+                wait = 60 * 2**attempt
+            print(f"  Waiting {wait:.0f}s for GitHub's rate limit...")
+            time.sleep(wait)
+    if isinstance(result, dict) and result.get("errors"):
+        raise RuntimeError(f"GitHub API errors: {result['errors']}")
+    return result
 
 
-def gh_search(url: str) -> JsonObject:
-    return cast(JsonObject, gh(url, accept="application/vnd.github.cloak-preview"))
+def search_commits(query: str, page: int = 1, order: str = "asc") -> JsonObject:
+    params = urllib.parse.urlencode(
+        {
+            "q": query,
+            "per_page": 100,
+            "page": page,
+            "sort": "committer-date",
+            "order": order,
+        }
+    )
+    for attempt in range(3):
+        # Pace searches below 30 requests per minute and back off on incomplete results.
+        time.sleep(2.1 if attempt == 0 else 5 * 2**attempt)
+        result = cast(JsonObject, gh(f"https://api.github.com/search/commits?{params}"))
+        if not result["incomplete_results"]:
+            return result
+        print(f"  Incomplete commit search (attempt {attempt + 1}/3)")
+    raise RuntimeError("GitHub returned an incomplete commit search after 3 attempts")
+
+
+def find_commits(query: str, date_range: str | None = None) -> list[JsonObject]:
+    search = f"{query} committer-date:{date_range}" if date_range else query
+    result = search_commits(search)
+    count = cast(int, result["total_count"])
+    print(f"  Found {count} commits: {search}")
+    commits = cast(list[JsonObject], result["items"])
+    if count > 1000:
+        latest_result = search_commits(search, order="desc")
+        if latest_result["total_count"] != count:
+            raise SearchChangedError("Commit search count changed while finding dates")
+        latest = cast(list[JsonObject], latest_result["items"])
+
+        def committed_at(item: JsonObject) -> datetime:
+            commit = cast(JsonObject, item["commit"])
+            committer = cast(JsonObject, commit["committer"])
+            return datetime.fromisoformat(cast(str, committer["date"])).astimezone(UTC)
+
+        first, last = committed_at(commits[0]), committed_at(latest[0])
+        midpoint = (first + (last - first) / 2).replace(microsecond=0)
+        if midpoint >= last or midpoint < first:
+            raise RuntimeError(
+                "Cannot split commit search below GitHub's 1,000-result limit"
+            )
+
+        def timestamp(value: datetime) -> str:
+            return value.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        commits = find_commits(query, f"{timestamp(first)}..{timestamp(midpoint)}")
+        commits += find_commits(
+            query, f"{timestamp(midpoint + timedelta(seconds=1))}..{timestamp(last)}"
+        )
+    else:
+        for page in range(2, (count + 99) // 100 + 1):
+            batch = search_commits(search, page)
+            if batch["total_count"] != count:
+                raise SearchChangedError(
+                    "Commit search count changed during pagination"
+                )
+            commits.extend(cast(list[JsonObject], batch["items"]))
+    pairs = {
+        (cast(int, cast(JsonObject, item["repository"])["id"]), repo_str(item, "sha"))
+        for item in commits
+    }
+    if len(commits) != count or len(pairs) != count:
+        raise SearchChangedError(
+            "Commit search returned inconsistent or overlapping results"
+        )
+    return commits
+
+
+def get_authored_stats() -> tuple[int, int, int, int]:
+    for attempt in range(3):
+        try:
+            matches = find_commits(f"author:{USER}")
+            break
+        except SearchChangedError as error:
+            if attempt == 2:
+                raise
+            wait = 10 * 2**attempt
+            print(
+                f"  {error}; restarting commit search in {wait}s (attempt {attempt + 2}/3)"
+            )
+            time.sleep(wait)
+    repositories = {
+        repo_str(cast(JsonObject, item["repository"]), "full_name") for item in matches
+    }
+    commits = list({repo_str(item, "sha"): item for item in matches}.values())
+    added = deleted = 0
+    for start in range(0, len(commits), 100):
+        batch = commits[start : start + 100]
+        result = cast(
+            JsonObject,
+            gh(
+                "https://api.github.com/graphql",
+                {
+                    "query": """
+                query($ids: [ID!]!) {
+                    nodes(ids: $ids) {
+                        ... on Commit {
+                            oid additions deletions
+                            parents { totalCount }
+                        }
+                    }
+                }
+            """,
+                    "variables": {"ids": [item["node_id"] for item in batch]},
+                },
+            ),
+        )
+        data = cast(JsonObject, result["data"])
+        nodes = cast(list[JsonObject | None], data["nodes"])
+        for item, node in zip(batch, nodes, strict=True):
+            if node is None or node.get("oid") != item["sha"]:
+                raise RuntimeError(f"Could not read commit {item['sha']}")
+            parents = cast(JsonObject, node["parents"])
+            if cast(int, parents["totalCount"]) <= 1:
+                added += cast(int, node["additions"])
+                deleted += cast(int, node["deletions"])
+        print(f"  Read {start + len(batch)}/{len(commits)} unique commits")
+    return len(commits), len(repositories), added, deleted
+
+
+def get_overview() -> tuple[int, int, int, int, int, int]:
+    result = cast(
+        JsonObject,
+        gh(
+            "https://api.github.com/graphql",
+            {
+                "query": """
+            query($user: String!) {
+                user(login: $user) {
+                    pullRequests(states: [MERGED]) { totalCount }
+                    issues { totalCount }
+                }
+            }
+        """,
+                "variables": {
+                    "user": USER,
+                },
+            },
+        ),
+    )
+    data = cast(JsonObject, result["data"])
+    user = cast(JsonObject, data["user"])
+    prs = cast(JsonObject, user["pullRequests"])
+    issues = cast(JsonObject, user["issues"])
+    commits, repositories, added, deleted = get_authored_stats()
+    return (
+        commits,
+        cast(int, prs["totalCount"]),
+        cast(int, issues["totalCount"]),
+        repositories,
+        added,
+        deleted,
+    )
 
 
 def get_all_repos() -> list[JsonObject]:
@@ -48,12 +240,12 @@ def get_all_repos() -> list[JsonObject]:
         batch = cast(
             list[JsonObject],
             gh(
-                f"https://api.github.com/users/{USER}/repos?per_page=100&page={page}&sort=updated"
+                f"https://api.github.com/users/{USER}/repos?type=owner&per_page=100&page={page}"
             ),
         )
         if not batch:
             break
-        repos.extend(batch)
+        repos.extend(repo for repo in batch if not repo["fork"])
         page += 1
     return repos
 
@@ -63,53 +255,14 @@ def repo_str(repo: JsonObject, key: str) -> str:
 
 
 def get_repo_languages(repo: JsonObject) -> dict[str, int]:
-    try:
-        data = cast(JsonObject, gh(repo_str(repo, "languages_url")))
-        return {lang: cast(int, bytes_) for lang, bytes_ in data.items()}
-    except Exception as e:
-        print(f"  Warning: could not fetch languages for {repo_str(repo, 'name')}: {e}")
-        return {}
-
-
-def get_repo_line_delta(repo: JsonObject) -> tuple[int, int]:
-    retries = 5
-    for attempt in range(retries):
-        try:
-            data = gh(repo_str(repo, "url") + "/stats/code_frequency")
-            if not isinstance(data, list):
-                if attempt + 1 < retries:
-                    wait = 2 ** attempt
-                    print(
-                        f"  Retrying {repo_str(repo, 'name')} in {wait}s (attempt {attempt + 1})..."
-                    )
-                    time.sleep(wait)
-                    continue
-                return (0, 0)
-            weeks = cast(list[list[int]], data)
-            return (
-                sum(week[1] for week in weeks if week[1] > 0),
-                sum(abs(week[2]) for week in weeks if week[2] < 0),
-            )
-        except Exception as e:
-            if attempt + 1 < retries:
-                wait = 2 ** attempt
-                print(
-                    f"  Retrying {repo_str(repo, 'name')} in {wait}s (attempt {attempt + 1}): {e}"
-                )
-                time.sleep(wait)
-                continue
-            print(
-                f"  Warning: could not fetch code frequency for {repo_str(repo, 'name')}: {e}"
-            )
-            return (0, 0)
-    return (0, 0)
+    data = cast(JsonObject, gh(repo_str(repo, "languages_url")))
+    return {lang: cast(int, bytes_) for lang, bytes_ in data.items()}
 
 
 OCTICONS = {
     "commits": '<svg class="octicon" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M10.5 7.75a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0zm1.43.75a4.002 4.002 0 01-7.86 0H.75a.75.75 0 110-1.5h3.32a4.001 4.001 0 017.86 0h3.32a.75.75 0 110 1.5h-3.32z"/></svg>',
     "prs": '<svg class="octicon" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M7.177 3.073L9.573.677A.25.25 0 0110 .854v4.792a.25.25 0 01-.427.177L7.177 3.427a.25.25 0 010-.354zM3.75 2.5a.75.75 0 100 1.5.75.75 0 000-1.5zm-2.25.75a2.25 2.25 0 113 2.122v5.256a2.251 2.251 0 11-1.5 0V5.372A2.25 2.25 0 011.5 3.25zM11 2.5h-1V4h1a1 1 0 011 1v5.628a2.251 2.251 0 101.5 0V5A2.5 2.5 0 0011 2.5zm1 10.25a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM3.75 12a.75.75 0 100 1.5.75.75 0 000-1.5z"/></svg>',
     "issues": '<svg class="octicon" viewBox="0 0 16 16" width="16" height="16"><path d="M8 9.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/><path fill-rule="evenodd" d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/></svg>',
-    "lines": '<svg class="octicon" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M2.5 1.75a.25.25 0 01.25-.25h8.5a.25.25 0 01.25.25v7.736a.75.75 0 101.5 0V1.75A1.75 1.75 0 0011.25 0h-8.5A1.75 1.75 0 001 1.75v11.5c0 .966.784 1.75 1.75 1.75h3.17a.75.75 0 000-1.5H2.75a.25.25 0 01-.25-.25V1.75zM4.75 4a.75.75 0 000 1.5h4.5a.75.75 0 000-1.5h-4.5zM4 7.75A.75.75 0 014.75 7h2a.75.75 0 010 1.5h-2A.75.75 0 014 7.75zm11.774 3.537a.75.75 0 00-1.048-1.074L10.7 14.145 9.281 12.72a.75.75 0 00-1.062 1.058l1.943 1.95a.75.75 0 001.055.008l4.557-4.45z"/></svg>',
     "repos": '<svg class="octicon" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M2 2.5A2.5 2.5 0 014.5 0h8.75a.75.75 0 01.75.75v12.5a.75.75 0 01-.75.75h-2.5a.75.75 0 110-1.5h1.75v-2h-8a1 1 0 00-.714 1.7.75.75 0 01-1.072 1.05A2.495 2.495 0 012 11.5v-9zm10.5-1V9h-8c-.356 0-.694.074-1 .208V2.5a1 1 0 011-1h8zM5 12.25v3.25a.25.25 0 00.4.2l1.45-1.087a.25.25 0 01.3 0L8.6 15.7a.25.25 0 00.4-.2v-3.25a.25.25 0 00-.25-.25h-3.5a.25.25 0 00-.25.25z"/></svg>',
 }
 
@@ -148,6 +301,14 @@ svg {
 }
 foreignObject {
   width: calc(100% - 42px);
+  height: calc(100% - 34px);
+}
+h2 {
+  margin: 0 0 0.75em;
+  line-height: 24px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffffff;
 }
 .octicon {
   margin-right: 1ch;
@@ -160,25 +321,32 @@ def fmt(n: int) -> str:
     return f"{n:,}"
 
 
-def card(body: str, y: int, height: int) -> str:
-    return f"""<svg width="360" height="210" xmlns="http://www.w3.org/2000/svg">
+def card(body: str) -> str:
+    return f"""<svg width="360" height="240" xmlns="http://www.w3.org/2000/svg">
 {CARD_CSS}
 <rect x="5" y="5" id="background" />
-<foreignObject x="21" y="{y}" width="318" height="{height}">
+<foreignObject x="21" y="17" width="318" height="206">
 {body}
 </foreignObject>
 </svg>"""
 
 
-def render_overview(stats: tuple[str, int, int, int, int, int]) -> str:
-    name, commits, prs, issues, lines, repos = stats
+def render_overview(stats: tuple[int, int, int, int, int, int]) -> str:
+    commits, prs, issues, repos, added, deleted = stats
 
     items = [
-        ("commits", "Commits", fmt(commits)),
-        ("lines", "Lines of code changed", fmt(lines)),
-        ("prs", "Pull requests", fmt(prs)),
+        (
+            "commits",
+            "Lines changed",
+            (
+                f'<span class="additions">+{fmt(added)}</span> '
+                f'<span class="deletions">−{fmt(deleted)}</span>'
+            ),
+        ),
+        ("commits", "Commits authored", fmt(commits)),
+        ("repos", "Repositories contributed to", fmt(repos)),
+        ("prs", "Pull requests merged", fmt(prs)),
         ("issues", "Issues opened", fmt(issues)),
-        ("repos", "Repositories contributed", fmt(repos)),
     ]
     rows_html = "".join(
         f"""
@@ -188,17 +356,9 @@ def render_overview(stats: tuple[str, int, int, int, int, int]) -> str:
 
     return card(
         f"""<style>
-foreignObject {{ height: calc(100% - 38px); }}
 table {{
   width: 100%;
   border-collapse: collapse;
-}}
-th {{
-  padding: 0 0.5em 0.5em;
-  text-align: left;
-  font-size: 14px;
-  font-weight: 600;
-  color: #ffffff;
 }}
 td {{
   padding: 0.25em;
@@ -213,20 +373,19 @@ td {{
 .value {{
   text-align: right;
   font-weight: 400;
+  white-space: nowrap;
 }}
+.additions {{ color: #3fb950; }}
+.deletions {{ color: #f85149; }}
 .octicon {{ fill: rgb(139, 139, 139); }}
 </style>
 <div xmlns="http://www.w3.org/1999/xhtml">
+<h2>GitHub Activity</h2>
 <table>
-<thead><tr>
-<th colspan="2">{escape(name)}&#x2019;s GitHub Statistics</th>
-</tr></thead>
 <tbody>{rows_html}
 </tbody>
 </table>
-</div>""",
-        19,
-        172,
+</div>"""
     )
 
 
@@ -252,14 +411,6 @@ def render_languages(languages: dict[str, int]) -> str:
 
     return card(
         f"""<style>
-foreignObject {{ height: calc(100% - 34px); }}
-h2 {{
-  margin: 0 0 0.75em;
-  line-height: 24px;
-  font-size: 16px;
-  font-weight: 600;
-  color: #ffffff;
-}}
 ul {{
   list-style: none;
   padding-left: 0;
@@ -298,40 +449,18 @@ div.ellipsis {{
 <div><span class="progress">{progress_html}</span></div>
 <ul>{lang_list_html}
 </ul>
-</div>""",
-        17,
-        176,
+</div>"""
     )
 
 
 def main() -> None:
-    print("Fetching user info...")
-    user = cast(JsonObject, gh(f"https://api.github.com/users/{USER}"))
-    name = cast(str | None, user.get("name")) or USER
-    print(f"  Name: {name}")
-
-    print("Fetching commit count...")
-    commits_data = gh_search(f"https://api.github.com/search/commits?q=author:{USER}")
-    total_commits = cast(int, commits_data["total_count"])
-    print(f"  Commits: {total_commits}")
-
-    print("Fetching PR count...")
-    prs_data = gh_search(
-        f"https://api.github.com/search/issues?q=author:{USER}+type:pr"
-    )
-    total_prs = cast(int, prs_data["total_count"])
-    print(f"  PRs: {total_prs}")
-
-    print("Fetching issue count...")
-    issues_data = gh_search(
-        f"https://api.github.com/search/issues?q=author:{USER}+type:issue"
-    )
-    total_issues = cast(int, issues_data["total_count"])
-    print(f"  Issues: {total_issues}")
+    print("Fetching all-time authored commit, PR, and issue counts...")
+    stats = get_overview()
+    print(f"  Overview: {stats}")
 
     print("Fetching repos...")
     repos = get_all_repos()
-    print(f"  Repos: {len(repos)}")
+    print(f"  Public non-fork repos: {len(repos)}")
 
     print("Fetching languages...")
     languages: defaultdict[str, int] = defaultdict(int)
@@ -340,29 +469,13 @@ def main() -> None:
             for lang, bytes_ in lang_data.items():
                 languages[lang] += bytes_
 
-    print("Computing lines changed...")
-    total_added = 0
-    total_deleted = 0
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        for added, deleted in executor.map(get_repo_line_delta, repos):
-            total_added += added
-            total_deleted += deleted
-
-    lines_changed = total_added + total_deleted
-    print(f"  Lines added: {total_added:,}")
-    print(f"  Lines deleted: {total_deleted:,}")
-    print(f"  Total lines changed: {lines_changed:,}")
-
-    print("Generating overview SVG...")
-    svg = render_overview(
-        (name, total_commits, total_prs, total_issues, lines_changed, len(repos))
-    )
+    print("Generating SVGs...")
+    svg = render_overview(stats)
+    svg_langs = render_languages(dict(languages))
     overview_path = OUTPUT / "generated.overview.svg"
     _ = overview_path.write_text(svg, encoding="utf-8")
     print(f"  Written to {overview_path}")
 
-    print("Generating languages SVG...")
-    svg_langs = render_languages(dict(languages))
     langs_path = OUTPUT / "generated.languages.svg"
     _ = langs_path.write_text(svg_langs, encoding="utf-8")
     print(f"  Written to {langs_path}")

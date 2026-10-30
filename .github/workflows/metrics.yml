@@ -3,6 +3,9 @@ on:
   schedule: [{ cron: "0 */12 * * *" }]
   workflow_dispatch:
   push: { branches: ["master", "main"] }
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   github-metrics:
     runs-on: ubuntu-latest
@@ -11,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Generate SVG stats
-        run: python3 src/gen_svg.py
+        run: python3 -u src/gen_svg.py
         env:
           METRICS_TOKEN: ${{ secrets.METRICS_TOKEN }}
           GITHUB_ACTOR: ${{ github.repository_owner }}
