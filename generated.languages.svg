@@ -68,52 +68,52 @@ div.ellipsis {
 </style>
 <div xmlns="http://www.w3.org/1999/xhtml" class="ellipsis">
 <h2>Most Used Languages</h2>
-<div><span class="progress"><span style="background-color:#dea584;width:61.695%;margin-right:0.617%"></span><span style="background-color:#7e7eff;width:18.656%;margin-right:0.187%"></span><span style="background-color:#3572A5;width:5.977%;margin-right:0.060%"></span><span style="background-color:#3178c6;width:5.599%;margin-right:0.056%"></span><span style="background-color:#000080;width:4.882%;margin-right:0.049%"></span><span style="background-color:#89e051;width:1.261%;margin-right:0.013%"></span><span style="background-color:#555555;width:0.932%;margin-right:0.009%"></span><span style="background-color:#8b8b8b;width:0.527%;margin-right:0.005%"></span><span style="background-color:#663399;width:0.398%;margin-right:0.004%"></span><span style="background-color:#f34b7d;width:0.073%;margin-right:0.001%"></span></span></div>
+<div><span class="progress"><span style="background-color:#dea584;width:61.122%;margin-right:0.611%"></span><span style="background-color:#7e7eff;width:19.281%;margin-right:0.193%"></span><span style="background-color:#3572A5;width:5.922%;margin-right:0.059%"></span><span style="background-color:#3178c6;width:5.547%;margin-right:0.055%"></span><span style="background-color:#000080;width:4.836%;margin-right:0.048%"></span><span style="background-color:#89e051;width:1.379%;margin-right:0.014%"></span><span style="background-color:#555555;width:0.923%;margin-right:0.009%"></span><span style="background-color:#8b8b8b;width:0.522%;margin-right:0.005%"></span><span style="background-color:#663399;width:0.395%;margin-right:0.004%"></span><span style="background-color:#f34b7d;width:0.073%;margin-right:0.001%"></span></span></div>
 <ul>
 <li>
 <svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:#dea584" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
 <span class="lang">Rust</span>
-<span class="percent">61.69%</span>
+<span class="percent">61.12%</span>
 </li>
 <li>
 <svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:#7e7eff" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
 <span class="lang">Nix</span>
-<span class="percent">18.66%</span>
+<span class="percent">19.28%</span>
 </li>
 <li>
 <svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:#3572A5" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
 <span class="lang">Python</span>
-<span class="percent">5.98%</span>
+<span class="percent">5.92%</span>
 </li>
 <li>
 <svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:#3178c6" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
 <span class="lang">TypeScript</span>
-<span class="percent">5.60%</span>
+<span class="percent">5.55%</span>
 </li>
 <li>
 <svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:#000080" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
 <span class="lang">Lua</span>
-<span class="percent">4.88%</span>
+<span class="percent">4.84%</span>
 </li>
 <li>
 <svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:#89e051" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
 <span class="lang">Shell</span>
-<span class="percent">1.26%</span>
+<span class="percent">1.38%</span>
 </li>
 <li>
 <svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:#555555" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
 <span class="lang">C</span>
-<span class="percent">0.93%</span>
+<span class="percent">0.92%</span>
 </li>
 <li>
 <svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:#8b8b8b" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
 <span class="lang">GLSL</span>
-<span class="percent">0.53%</span>
+<span class="percent">0.52%</span>
 </li>
 <li>
 <svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:#663399" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
 <span class="lang">CSS</span>
-<span class="percent">0.40%</span>
+<span class="percent">0.39%</span>
 </li>
 <li>
 <svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:#f34b7d" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
