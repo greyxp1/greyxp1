@@ -13,11 +13,21 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/cache/restore@v4
+        with:
+          path: .cache/metrics
+          key: metrics-commits-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: metrics-commits-
       - name: Generate SVG stats
         run: python3 -u src/gen_svg.py
         env:
           METRICS_TOKEN: ${{ secrets.METRICS_TOKEN }}
           GITHUB_ACTOR: ${{ github.repository_owner }}
+      - uses: actions/cache/save@v4
+        if: ${{ !cancelled() }}
+        with:
+          path: .cache/metrics
+          key: metrics-commits-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Commit generated SVGs
         run: |
           git config user.name "github-actions[bot]"

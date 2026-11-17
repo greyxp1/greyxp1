@@ -17,6 +17,7 @@ from typing import TypeAlias, cast
 TOKEN = os.environ["METRICS_TOKEN"]
 USER = os.environ["GITHUB_ACTOR"]
 OUTPUT = Path(os.environ.get("GENERATED_DIR", "."))
+CACHE = Path(os.environ.get("METRICS_CACHE", ".cache/metrics/commits.json"))
 TIMEOUT = 30
 MAX_WORKERS = 8
 
@@ -53,34 +54,45 @@ def gh(url: str, data: JsonObject | None = None) -> JsonValue:
             retry_after = error.headers.get("Retry-After")
             primary_limit = error.headers.get("X-RateLimit-Remaining") == "0"
             secondary_limit = "secondary rate limit" in message.lower()
-            if (
-                attempt == 2
-                or error.code not in (403, 429)
-                or not (
+            transient = error.code in (500, 502, 503, 504)
+            if attempt == 2 or not (
+                transient
+                or error.code in (403, 429)
+                and (
                     retry_after or primary_limit or secondary_limit or error.code == 429
                 )
             ):
                 raise RuntimeError(
                     f"GitHub API error {error.code}: {message}"
                 ) from error
-            if retry_after:
+            if transient:
+                wait = 2**attempt
+            elif retry_after:
                 wait = max(1, float(retry_after))
             elif primary_limit:
                 wait = max(1, int(error.headers["X-RateLimit-Reset"]) - time.time() + 1)
             else:
                 wait = 60 * 2**attempt
-            print(f"  Waiting {wait:.0f}s for GitHub's rate limit...")
+            print(f"  GitHub API {error.code}; retrying in {wait:.0f}s...")
+            time.sleep(wait)
+        except (urllib.error.URLError, TimeoutError) as error:
+            if attempt == 2:
+                raise
+            wait = 2**attempt
+            print(f"  GitHub connection failed ({error}); retrying in {wait}s...")
             time.sleep(wait)
     if isinstance(result, dict) and result.get("errors"):
         raise RuntimeError(f"GitHub API errors: {result['errors']}")
     return result
 
 
-def search_commits(query: str, page: int = 1, order: str = "asc") -> JsonObject:
+def search_commits(
+    query: str, page: int = 1, order: str = "asc", per_page: int = 100
+) -> JsonObject:
     params = urllib.parse.urlencode(
         {
             "q": query,
-            "per_page": 100,
+            "per_page": per_page,
             "page": page,
             "sort": "committer-date",
             "order": order,
@@ -147,9 +159,47 @@ def find_commits(query: str, date_range: str | None = None) -> list[JsonObject]:
 
 
 def get_authored_stats() -> tuple[int, int, int, int]:
+    snapshot_path = CACHE.with_name("search.json")
+    snapshot = (
+        cast(JsonObject, json.loads(snapshot_path.read_text()))
+        if snapshot_path.exists()
+        else {}
+    )
+    now = datetime.now(UTC)
+    full_refresh = now.isoformat()
     for attempt in range(3):
         try:
-            matches = find_commits(f"author:{USER}")
+            query = f"author:{USER}"
+            if snapshot.get("user") == USER and now - datetime.fromisoformat(
+                cast(str, snapshot["full_refresh"])
+            ) < timedelta(days=1):
+                # Overlap the previous day to pick up delayed search indexing.
+                since = datetime.fromisoformat(
+                    cast(str, snapshot["updated_at"])
+                ) - timedelta(days=1)
+                cutoff = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+                recent = find_commits(query, f">={cutoff}")
+                previous = cast(list[JsonObject], snapshot["commits"])
+                matches = list(
+                    {
+                        (
+                            cast(int, cast(JsonObject, item["repository"])["id"]),
+                            repo_str(item, "sha"),
+                        ): item
+                        for item in previous + recent
+                    }.values()
+                )
+                count = search_commits(query, per_page=1)["total_count"]
+                if len(matches) == count:
+                    full_refresh = cast(str, snapshot["full_refresh"])
+                    print(f"  Reused commit history; {len(recent)} recent matches")
+                else:
+                    print(
+                        "  Commit count changed outside recent results; reconciling history..."
+                    )
+                    matches = find_commits(query)
+            else:
+                matches = find_commits(query)
             break
         except SearchChangedError as error:
             if attempt == 2:
@@ -163,9 +213,15 @@ def get_authored_stats() -> tuple[int, int, int, int]:
         repo_str(cast(JsonObject, item["repository"]), "full_name") for item in matches
     }
     commits = list({repo_str(item, "sha"): item for item in matches}.values())
-    added = deleted = 0
-    for start in range(0, len(commits), 100):
-        batch = commits[start : start + 100]
+    cached = (
+        cast(dict[str, list[int]], json.loads(CACHE.read_text()))
+        if CACHE.exists()
+        else {}
+    )
+    missing = [item for item in commits if repo_str(item, "sha") not in cached]
+    print(f"  Cached {len(commits) - len(missing)}/{len(commits)} unique commits")
+    for start in range(0, len(missing), 100):
+        batch = missing[start : start + 100]
         result = cast(
             JsonObject,
             gh(
@@ -192,9 +248,39 @@ def get_authored_stats() -> tuple[int, int, int, int]:
                 raise RuntimeError(f"Could not read commit {item['sha']}")
             parents = cast(JsonObject, node["parents"])
             if cast(int, parents["totalCount"]) <= 1:
-                added += cast(int, node["additions"])
-                deleted += cast(int, node["deletions"])
-        print(f"  Read {start + len(batch)}/{len(commits)} unique commits")
+                cached[repo_str(item, "sha")] = [
+                    cast(int, node["additions"]),
+                    cast(int, node["deletions"]),
+                ]
+            else:
+                cached[repo_str(item, "sha")] = [0, 0]
+        CACHE.parent.mkdir(parents=True, exist_ok=True)
+        CACHE.write_text(json.dumps(cached), encoding="utf-8")
+        print(f"  Read {start + len(batch)}/{len(missing)} uncached commits")
+    added = sum(cached[repo_str(item, "sha")][0] for item in commits)
+    deleted = sum(cached[repo_str(item, "sha")][1] for item in commits)
+    CACHE.parent.mkdir(parents=True, exist_ok=True)
+    snapshot_path.write_text(
+        json.dumps(
+            {
+                "user": USER,
+                "updated_at": now.isoformat(),
+                "full_refresh": full_refresh,
+                "commits": [
+                    {
+                        "sha": item["sha"],
+                        "node_id": item["node_id"],
+                        "repository": {
+                            key: cast(JsonObject, item["repository"])[key]
+                            for key in ("id", "full_name")
+                        },
+                    }
+                    for item in matches
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
     return len(commits), len(repositories), added, deleted
 
 
