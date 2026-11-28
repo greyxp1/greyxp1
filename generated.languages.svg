@@ -68,7 +68,7 @@ div.ellipsis {
 </style>
 <div xmlns="http://www.w3.org/1999/xhtml" class="ellipsis">
 <h2>Most Used Languages</h2>
-<div><span class="progress"><span style="background-color:#dea584;width:66.358%;margin-right:0.664%"></span><span style="background-color:#7e7eff;width:18.305%;margin-right:0.183%"></span><span style="background-color:#3572A5;width:5.853%;margin-right:0.059%"></span><span style="background-color:#3178c6;width:4.225%;margin-right:0.042%"></span><span style="background-color:#000080;width:3.527%;margin-right:0.035%"></span><span style="background-color:#89e051;width:1.100%;margin-right:0.011%"></span><span style="background-color:#8b8b8b;width:0.381%;margin-right:0.004%"></span><span style="background-color:#663399;width:0.250%;margin-right:0.003%"></span></span></div>
+<div><span class="progress"><span style="background-color:#dea584;width:66.364%;margin-right:0.664%"></span><span style="background-color:#7e7eff;width:18.297%;margin-right:0.183%"></span><span style="background-color:#3572A5;width:5.854%;margin-right:0.059%"></span><span style="background-color:#3178c6;width:4.226%;margin-right:0.042%"></span><span style="background-color:#000080;width:3.528%;margin-right:0.035%"></span><span style="background-color:#89e051;width:1.100%;margin-right:0.011%"></span><span style="background-color:#8b8b8b;width:0.381%;margin-right:0.004%"></span><span style="background-color:#663399;width:0.250%;margin-right:0.003%"></span></span></div>
 <ul>
 <li>
 <svg xmlns="http://www.w3.org/2000/svg" class="octicon" style="fill:#dea584" viewBox="0 0 16 16" width="16" height="16"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8z"></path></svg>
